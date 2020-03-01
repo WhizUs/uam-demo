@@ -1,0 +1,94 @@
+version: '3.7'
+services:
+  ipa:
+    image: freeipa/freeipa-server:fedora-29
+    cap_add:
+      - SYS_TIME
+    hostname: ipa.demo.whizus.net
+    stdin_open: true
+    stop_signal: RTMIN+3
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=0
+    tmpfs:
+      - /run
+      - /tmp
+    tty: true
+    volumes:
+      - ./.data/ipa/:/data/:Z
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+    environment: 
+      - IPA_SERVER_HOSTNAME=ipa.demo.whizus.net
+#      - IPA_SERVER_INSTALL_OPTS=-U -r DEMO.WHIZUS.NET # uncomment on first run only, comment out 4 HTTPS rewrite rules in /etc/httpd/ipa-rewrite.conf after
+      - PASSWORD=${IPA_PASSWORD}
+      - VIRTUAL_PROTO=http
+      - VIRTUAL_HOST=ipa.demo.whizus.net
+      - VIRTUAL_PORT=80
+    networks: 
+      - proxy
+    ports:
+      - "8097:80"     # HTTP
+      - "9444:443"    # HTTPS
+      - "389:389"     # LDAP
+      - "636:636"     # LDAPS
+      - "88:88"       # Kerberos
+      - "464:464"     # Kerberos
+      - "88:88/udp"   # Kerberos
+      - "464:464/udp" # Kerberos
+      - "123:123/udp" # ntp
+    labels:
+      - "traefik.port=80"
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      - "traefik.frontend.rule=Host:ipa.${DOMAIN}"
+
+  keycloak:
+    image: jboss/keycloak:8.0.0
+    command: -Dkeycloak.profile.feature.admin_fine_grained_authz=enabled
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 20000
+        hard: 40000
+    environment:
+      - PROXY_ADDRESS_FORWARDING=${PROXY_ADDRESS_FORWARDING}
+      - DB_VENDOR=${DB_VENDOR}
+      - DB_USER=${DB_USER}
+      - DB_DATABASE=${DB_DATABASE}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_ADDR=${DB_ADDR}
+      - DB_PORT=${DB_PORT}
+      - KEYCLOAK_USER=${KEYCLOAK_USER}
+      - KEYCLOAK_PASSWORD=${KEYCLOAK_PASSWORD}
+#      - KEYCLOAK_IMPORT=/tmp/realm.json
+    networks:
+      - intern
+      - proxy
+    depends_on:
+      - mysql
+#    volumes:
+#      - ${PWD}/demo.json:/tmp/realm.json
+#      - ${PWD}/keycloak-add-user.json:/opt/jboss/keycloak/standalone/configuration/keycloak-add-user.json
+    labels:
+      - "traefik.port=8080"
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      - "traefik.frontend.rule=Host:auth.${DOMAIN}"
+
+  mysql:
+    image: mariadb:10.4
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+    ports:
+      - 3306
+    volumes:
+      - ./.data/mysql:/var/lib/mysql
+    networks:
+      - intern
+    
+networks:
+  intern:
+  proxy:
+    external: true

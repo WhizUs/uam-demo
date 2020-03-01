@@ -1,0 +1,29 @@
+debug = true
+checkNewVersion = true
+logLevel = "INFO"
+
+defaultEntryPoints = ["https", "http"]
+[accessLog]
+
+[web]
+address = ":8080"
+
+[entryPoints]
+  [entryPoints.http]
+  address = ":80"
+    [entryPoints.http.redirect]
+    entryPoint = "https"
+  [entryPoints.https]
+  address = ":443"
+    [entryPoints.https.tls]
+      [[entryPoints.https.tls.certificates]]
+      certFile = "/certs/demo-fullchain.pem"
+      keyFile = "/certs/demo-privkey.pem"
+
+[retry]
+
+[docker]
+endpoint = "unix:///var/run/docker.sock"
+domain = "demo.whizus.net"
+watch = true
+exposedbydefault = false

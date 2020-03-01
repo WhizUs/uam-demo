@@ -1,0 +1,28 @@
+version: '3'
+services:
+  traefik:
+    image: traefik:v1.7.16
+    restart: always
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./traefik.toml:/traefik.toml
+      - ./certs:/certs:ro # sorry this is not included :(
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      proxy:
+        aliases:
+          - auth.${DOMAIN}
+          - ipa.${DOMAIN}
+    labels:
+      - "traefik.port=8080"
+      - "traefik.enable=true"
+      - "traefik.frontend.rule=Host:lb.${DOMAIN}"
+      - "traefik.docker.network=proxy"
+      #- "traefik.frontend.auth.basic=demo:<htpasswd -n -b demo YOUR_PASS>" # replace $ with $$s
+
+networks:
+  proxy:
+    external:
+      name: proxy
