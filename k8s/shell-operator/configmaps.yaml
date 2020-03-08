@@ -1,0 +1,176 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: autoconfig-default
+  namespace: shell-operator
+data:
+  # Pattern: [project]_[environment]_[namespace]_[...]_[role]
+  PROJECT: "whizus"
+  ENVIRONMENT: "${PROJECT_ENVIRONMENT}"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hooks
+  namespace: shell-operator
+data:
+  autoconfig-default-namespace-hook.sh: |-
+    #!/usr/bin/env bash
+
+    if [[ $1 == "--config" ]] ; then
+      cat <<EOF
+      {
+        "configVersion": "v1",
+        "onKubernetesEvent": [
+          {
+            "apiVersion": "v1",
+            "kind": "Namespace",
+            "watchEvent": ["Added", "Modified"],
+            "labelSelector": {
+              "matchLabels": {
+                "autoconfig": "default"
+              }
+            },
+            "allowFailure": true
+          }
+         ]
+      }
+    EOF
+    else
+      namespace=$(jq -r .[0].object.metadata.name $BINDING_CONTEXT_PATH)
+      echo "Apply default configuration to namespace: $namespace"
+      export NAMESPACE=$namespace; envsubst < /autoconfigs/autoconfig-default.yaml | kubectl apply -f -
+    fi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: autoconfigs
+  namespace: shell-operator
+data:
+  autoconfig-default.yaml: |+
+    # RoleBinding Definitions
+
+    ## Namespace-Admin
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      name: ${NAMESPACE}_operator
+      namespace: ${NAMESPACE}
+    subjects:
+    - kind: Group
+      ### Example:
+      ###          whizus-dev-mynamespace-operator
+      ### Pattern: [project]_[environment]_[namespace]_[role]
+      ###
+      ### Desription: this group restricts user permissions to a single namespace.
+      name: /${PROJECT}_k8s_${ENVIRONMENT}_${NAMESPACE}_operator
+      apiGroup: rbac.authorization.k8s.io
+      ### Example:
+      ###          whizus-dev-operator
+      ### Pattern: [project]_[environment]_[role]
+      ###
+      ### Description: this group restricts user permissions to all namespaces within the same cluster, except excluded (f.e. kube-system).
+    - kind: Group
+      name: /${PROJECT}_k8s_${ENVIRONMENT}_operator
+      apiGroup: rbac.authorization.k8s.io
+      ### Example:
+      ###          whizus-operator
+      ### Pattern: [project]_[role]
+      ###
+      ### Description: this group restricts user permissions to all namespaces within all clusters in the scope of the whole project. Not applied to excluded namespaces.
+    - kind: Group
+      name: /${PROJECT}_k8s_operator
+      apiGroup: rbac.authorization.k8s.io
+    roleRef:
+      kind: ClusterRole
+      name: admin
+      apiGroup: rbac.authorization.k8s.io
+
+    ## Namespace-Editor
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      name: ${NAMESPACE}_editor
+      namespace: ${NAMESPACE}
+    subjects:
+    - kind: Group
+      name: /${PROJECT}_k8s_${ENVIRONMENT}_${NAMESPACE}_editor
+      apiGroup: rbac.authorization.k8s.io
+    - kind: Group
+      name: /${PROJECT}_k8s_${ENVIRONMENT}_editor
+      apiGroup: rbac.authorization.k8s.io
+    - kind: Group
+      name: /${PROJECT}_k8s_editor
+      apiGroup: rbac.authorization.k8s.io
+    roleRef:
+      kind: ClusterRole
+      name: edit
+      apiGroup: rbac.authorization.k8s.io
+
+    ## Namespace Read-Only
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      name: ${NAMESPACE}_read-only
+      namespace: ${NAMESPACE}
+    subjects:
+    - kind: Group
+      name: /${PROJECT}_k8s_${ENVIRONMENT}_${NAMESPACE}_read-only
+      apiGroup: rbac.authorization.k8s.io
+    - kind: Group
+      name: /${PROJECT}_k8s_${ENVIRONMENT}_read-only
+      apiGroup: rbac.authorization.k8s.io
+    - kind: Group
+      name: /${PROJECT}_k8s_read-only
+      apiGroup: rbac.authorization.k8s.io
+    roleRef:
+      kind: ClusterRole
+      name: view
+      apiGroup: rbac.authorization.k8s.io
+
+    # Default Limits
+    ---
+    apiVersion: v1
+    kind: LimitRange
+    metadata:
+      name: limit-memory-ratio-pod
+      namespace: ${NAMESPACE}
+    spec:
+      limits:
+      ## Examples: Memory Request 1GB and Limit to 2GB is ok (ratio = 2), Memory Request 1GB and Limit 10GB is not ok (ratio = 10)
+      - maxLimitRequestRatio:
+          memory: 2
+        min:
+          cpu: "100m"
+          memory: "100Mi"
+        max:
+          cpu: "4000m"
+          memory: "4Gi"
+        type: Pod
+      - default:
+          cpu: "200m"
+          memory: "200Mi"
+        defaultRequest:
+          cpu: "100m"
+          memory: "100Mi"
+        type: Container
+
+    # Default Quotas
+    ---
+    apiVersion: v1
+    kind: ResourceQuota
+    metadata:
+      name: quota-default-compute-resources
+      namespace: ${NAMESPACE}
+    spec:
+      hard:
+        pods: "100"
+        requests.cpu: "10"
+        requests.memory: 10Gi
+        limits.cpu: "20"
+        limits.memory: 20Gi

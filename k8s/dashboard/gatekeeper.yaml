@@ -1,0 +1,90 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gatekeeper
+  namespace: kubernetes-dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gatekeeper
+  template:
+    metadata:
+      labels:
+        app: gatekeeper
+    spec:
+      containers:
+      - image: quay.io/keycloak/keycloak-gatekeeper:8.0.0
+        name: gatekeeper
+        args:
+        - --listen=0.0.0.0:3000
+        - --discovery-url=https://auth.demo.whizus.net/auth/realms/demo
+        - --client-id=kubernetes
+        - --client-secret=${CLIENT_SECRET}
+        - --redirection-url=https://${PROJECT_ENVIRONMENT}.demo.whizus.net
+        - --enable-refresh-tokens=true
+        - --encryption-key=${ENCRYPTION_KEY}    # 32 bytes string
+        - --upstream-url=http://kubernetes-dashboard.kubernetes-dashboard.svc.cluster.local:8080
+        - --resources=uri=/*
+        ports:
+        - containerPort: 3000
+        securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsUser: 1001
+            runAsGroup: 2001
+        livenessProbe:
+          httpGet:
+            path: /oauth/health
+            port: 3000
+          initialDelaySeconds: 3
+          timeoutSeconds: 2
+        readinessProbe:
+          httpGet:
+            path: /oauth/health
+            port: 3000
+          initialDelaySeconds: 3
+          timeoutSeconds: 2
+        resources:
+          limits:
+            cpu: 30m
+            memory: 32Mi
+          requests:
+            cpu: 30m
+            memory: 32Mi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gatekeeper
+  namespace: kubernetes-dashboard
+spec:
+  type: ClusterIP
+  ports:
+  - protocol: TCP
+    port: 3000
+    targetPort: 3000
+  selector:
+    app: gatekeeper
+
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: gatekeeper
+  namespace: kubernetes-dashboard
+spec:
+  rules:
+  - host: ${PROJECT_ENVIRONMENT}.demo.whizus.net
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: gatekeeper
+          servicePort: 3000
+  tls:
+  - hosts:
+    - ${PROJECT_ENVIRONMENT}.demo.whizus.net
+    secretName: demo.whizus.net-crt

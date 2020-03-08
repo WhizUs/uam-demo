@@ -1,0 +1,46 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: shell-operator
+  name: shell-operator
+  namespace: shell-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: shell-operator
+  strategy: {}
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: shell-operator
+    spec:
+      serviceAccountName: monitor-namespaces
+      containers:
+      - name: shell-operator
+        image: whizus/shell-operator:latest
+        imagePullPolicy: IfNotPresent
+        resources:
+          limits:
+            cpu: 100m
+            memory: 100Mi
+        envFrom:
+        - configMapRef:
+            name: autoconfig-default
+        volumeMounts:
+        - name:  autoconfigs
+          mountPath: /autoconfigs
+        - name:  hooks
+          mountPath: /hooks
+      volumes:
+      - name: autoconfigs
+        configMap:
+          name: autoconfigs
+          defaultMode: 0400
+      - name: hooks
+        configMap:
+          name: hooks
+          defaultMode: 0500
